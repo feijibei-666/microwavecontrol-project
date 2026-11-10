@@ -105,9 +105,7 @@ void UsageFault_Handler(void)
   * @param  None
   * @retval None
   */
-void SVC_Handler(void)
-{
-}
+/* SVC_Handler is supplied by the FreeRTOS RVDS Cortex-M3 port. */
 
 /**
   * @brief  This function handles Debug Monitor exception.
@@ -123,18 +121,14 @@ void DebugMon_Handler(void)
   * @param  None
   * @retval None
   */
-void PendSV_Handler(void)
-{
-}
+/* PendSV_Handler is supplied by the FreeRTOS RVDS Cortex-M3 port. */
 
 /**
   * @brief  This function handles SysTick Handler.
   * @param  None
   * @retval None
   */
-void SysTick_Handler(void)
-{
-}
+/* SysTick_Handler is supplied by FreeRTOS; its tick hook samples the keys. */
 
 /******************************************************************************/
 /*                 STM32F10x Peripherals Interrupt Handlers                   */

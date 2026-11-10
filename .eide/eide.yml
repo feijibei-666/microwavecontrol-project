@@ -20,6 +20,15 @@ virtualFolder:
     - name: user
       files:
         - path: user/main.c
+        - path: user/app.c
+        - path: user/app.h
+        - path: user/app_rtos.c
+        - path: user/app_rtos.h
+        - path: user/ui.c
+        - path: user/ui.h
+        - path: user/rtos_hooks.c
+        - path: user/rtos_hooks.h
+        - path: user/FreeRTOSConfig.h
         - path: user/stm32f10x_conf.h
         - path: user/stm32f10x_it.c
         - path: user/stm32f10x_it.h
@@ -34,8 +43,6 @@ virtualFolder:
         - path: bsp/exti.c
         - path: bsp/turntable.c
         - path: bsp/heater.c
-        - path: bsp/buzzer.c
-        - path: bsp/dht11.c
       folders: []
     - name: library
       files:
@@ -86,6 +93,13 @@ virtualFolder:
         - path: library/stm32f10x_wwdg.c
         - path: library/stm32f10x_wwdg.h
       folders: []
+    - name: FreeRTOS
+      files:
+        - path: third_party/FreeRTOS/tasks.c
+        - path: third_party/FreeRTOS/list.c
+        - path: third_party/FreeRTOS/queue.c
+        - path: third_party/FreeRTOS/portable/RVDS/ARM_CM3/port.c
+      folders: []
 dependenceList: []
 outDir: build
 miscInfo:
@@ -95,6 +109,7 @@ targets:
     cppPreprocessAttrs:
       defineList:
         - USE_STDPERIPH_DRIVER
+        - STM32F10X_MD
       incList:
         - start
         - user
@@ -102,6 +117,8 @@ targets:
         - library
         - .cmsis/include
         - RTE/_Target 1
+        - third_party/FreeRTOS/include
+        - third_party/FreeRTOS/portable/RVDS/ARM_CM3
       libList: []
     excludeList: []
     settings:
@@ -222,4 +239,14 @@ targets:
         otherCmds: ""
         proType: 1
         speed: 8000
-    uploader: JLink
+      STLink:
+        address: "0x8000000"
+        bin: ""
+        elFile: None
+        optionBytes: .eide/target 1.st.option.bytes.ini
+        otherCmds: ""
+        proType: SWD
+        resetMode: default
+        runAfterProgram: true
+        speed: 4000
+    uploader: STLink

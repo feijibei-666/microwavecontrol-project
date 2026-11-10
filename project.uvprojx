@@ -334,9 +334,9 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_STDPERIPH_DRIVER</Define>
+              <Define>USE_STDPERIPH_DRIVER,STM32F10X_MD</Define>
               <Undefine></Undefine>
-              <IncludePath>.\start;.\user;.\bsp;.\library</IncludePath>
+              <IncludePath>.\start;.\user;.\bsp;.\library;.\third_party\FreeRTOS\include;.\third_party\FreeRTOS\portable\RVDS\ARM_CM3</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -434,6 +434,36 @@
               <FileName>stm32f10x_it.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\user\stm32f10x_it.h</FilePath>
+            </File>
+            <File>
+              <FileName>app.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\user\app.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_rtos.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\user\app_rtos.c</FilePath>
+            </File>
+            <File>
+              <FileName>ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\user\ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>rtos_hooks.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\user\rtos_hooks.c</FilePath>
+            </File>
+            <File>
+              <FileName>FreeRTOSConfig.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\user\FreeRTOSConfig.h</FilePath>
+            </File>
+            <File>
+              <FileName>rtos_hooks.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\user\rtos_hooks.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -714,6 +744,31 @@
               <FileName>stm32f10x_wwdg.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\library\stm32f10x_wwdg.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>FreeRTOS</GroupName>
+          <Files>
+            <File>
+              <FileName>tasks.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\third_party\FreeRTOS\tasks.c</FilePath>
+            </File>
+            <File>
+              <FileName>list.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\third_party\FreeRTOS\list.c</FilePath>
+            </File>
+            <File>
+              <FileName>queue.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\third_party\FreeRTOS\queue.c</FilePath>
+            </File>
+            <File>
+              <FileName>port.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\third_party\FreeRTOS\portable\RVDS\ARM_CM3\port.c</FilePath>
             </File>
           </Files>
         </Group>

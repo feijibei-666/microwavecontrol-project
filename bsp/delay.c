@@ -1,51 +1,63 @@
 #include "delay.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
-static uint8_t  fac_us = 0;     /* 1us 需要的 SysTick 计数 */
-static uint16_t fac_ms = 0;     /* 1ms 需要的 SysTick 计数 */
+/* The bundled legacy CMSIS header has no DWT structure. Cortex-M3 registers. */
+#define DWT_CTRL_REG    (*(volatile uint32_t *)0xE0001000)
+#define DWT_CYCCNT_REG  (*(volatile uint32_t *)0xE0001004)
+#define DEMCR_REG       (*(volatile uint32_t *)0xE000EDFC)
+#define ICSR_REG        (*(volatile uint32_t *)0xE000ED04)
 
-/* SysTick 时钟源取 HCLK/8，计数一次即 1us（72MHz 时 HCLK/8 = 9MHz） */
 void delay_init(void)
 {
-    SysTick_CLKSourceConfig(SysTick_CLKSource_HCLK_Div8);
-    fac_us = (uint8_t)(SystemCoreClock / 8000000);
-    fac_ms = (uint16_t)fac_us * 1000;
+    SystemCoreClockUpdate();
+    DEMCR_REG |= (1UL << 24);
+    DWT_CYCCNT_REG = 0;
+    DWT_CTRL_REG |= 1UL;
+}
+
+uint32_t delay_millis(void)
+{
+    return (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
 }
 
 void delay_us(uint32_t nus)
 {
-    uint32_t temp;
+    uint32_t chunk;
+    uint32_t start;
+    uint32_t cycles;
+    uint32_t cycles_per_us = SystemCoreClock / 1000000;
 
-    SysTick->LOAD = nus * fac_us;
-    SysTick->VAL  = 0x00;
-    SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
-
-    do
+    while (nus != 0)
     {
-        temp = SysTick->CTRL;
-    } while ((temp & 0x01) && !(temp & (1 << 16)));   /* 等待计数到 0 */
-
-    SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
-    SysTick->VAL   = 0x00;
+        chunk = (nus > 1000) ? 1000 : nus;
+        cycles = chunk * cycles_per_us;
+        start = DWT_CYCCNT_REG;
+        while ((uint32_t)(DWT_CYCCNT_REG - start) < cycles)
+        {
+            /* Interrupts remain enabled. A preemption may lengthen the wait. */
+        }
+        nus -= chunk;
+    }
 }
 
-/* 逐毫秒累加，避免 nms 较大时超出 SysTick 的 24 位重装载范围 */
 void delay_ms(uint16_t nms)
 {
-    uint32_t temp;
-
-    SysTick->LOAD = fac_ms;
-    SysTick->VAL  = 0x00;
-    SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
-
-    while (nms--)
+    if (nms == 0)
     {
-        do
-        {
-            temp = SysTick->CTRL;
-        } while ((temp & 0x01) && !(temp & (1 << 16)));
-        SysTick->VAL = 0x00;
+        return;
     }
-
-    SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
-    SysTick->VAL   = 0x00;
+    configASSERT((ICSR_REG & 0x1FFUL) == 0);
+    if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+    {
+        /* One extra tick prevents an early return when called near a tick edge. */
+        vTaskDelay(pdMS_TO_TICKS(nms) + 1);
+    }
+    else
+    {
+        while (nms-- != 0)
+        {
+            delay_us(1000);
+        }
+    }
 }
