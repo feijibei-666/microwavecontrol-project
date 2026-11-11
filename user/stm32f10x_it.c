@@ -23,6 +23,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f10x_it.h"
+#include "rtos_hooks.h"
 
 /** @addtogroup STM32F10x_StdPeriph_Template
   * @{
@@ -55,6 +56,8 @@ void NMI_Handler(void)
   */
 void HardFault_Handler(void)
 {
+  /* 硬件异常同样先关闭执行机构，不能让转盘保持故障前的输出。 */
+  RTOS_Fatal(0xB001);
   /* Go to infinite loop when Hard Fault exception occurs */
   while (1)
   {
@@ -68,6 +71,8 @@ void HardFault_Handler(void)
   */
 void MemManage_Handler(void)
 {
+  /* 不依赖 FreeRTOS 调度器，安全关闭后保留故障现场。 */
+  RTOS_Fatal(0xB002);
   /* Go to infinite loop when Memory Manage exception occurs */
   while (1)
   {
@@ -81,6 +86,8 @@ void MemManage_Handler(void)
   */
 void BusFault_Handler(void)
 {
+  /* 不依赖 FreeRTOS 调度器，安全关闭后保留故障现场。 */
+  RTOS_Fatal(0xB003);
   /* Go to infinite loop when Bus Fault exception occurs */
   while (1)
   {
@@ -94,6 +101,8 @@ void BusFault_Handler(void)
   */
 void UsageFault_Handler(void)
 {
+  /* 不依赖 FreeRTOS 调度器，安全关闭后保留故障现场。 */
+  RTOS_Fatal(0xB004);
   /* Go to infinite loop when Usage Fault exception occurs */
   while (1)
   {

@@ -1,6 +1,6 @@
 # stm32f10x_it.c 中断说明
 
-保留 STM32 标准外设库的异常处理模板。HardFault、MemManage、BusFault、UsageFault 仍进入模板中的死循环；NMI 和 DebugMon 保留原处理。
+保留 STM32 标准外设库的异常处理模板与原注释。HardFault、MemManage、BusFault、UsageFault 先分别以 `0xB001`～`0xB004` 调用 `RTOS_Fatal()`，直接关闭继电器、停止转盘并静音，然后保留故障现场；原模板死循环保留为不可返回后的防线。NMI 和 DebugMon 保留原处理。
 
 `SVC_Handler`、`PendSV_Handler` 和 `SysTick_Handler` 由官方 FreeRTOS RVDS Cortex-M3 移植层提供，通过 `FreeRTOSConfig.h` 中的宏直接对应启动文件向量。本文件不再定义同名函数，避免覆盖调度器入口或重复定义。
 

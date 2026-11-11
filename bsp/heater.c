@@ -1,61 +1,32 @@
 #include "heater.h"
 
-#define HEATER_TIM      TIM2
-
+/* 历史PWM比较值仅保留作档位比例记录，当前关闭接口不使用这些值。 */
 #define HEATER_LOW      6000    /* 30% */
 #define HEATER_MEDIUM   12000   /* 60% */
 #define HEATER_HIGH     19999   /* 100% */
 
 void Heater_Init(void)
 {
-    GPIO_InitTypeDef        GPIO_InitStructure;
-    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-    TIM_OCInitTypeDef       TIM_OCInitStructure;
-
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-
-    GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_2;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-    TIM_TimeBaseStructure.TIM_Period        = 19999;
-    TIM_TimeBaseStructure.TIM_Prescaler     = 71;
-    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_TimeBaseStructure.TIM_CounterMode   = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(HEATER_TIM, &TIM_TimeBaseStructure);
-
-    TIM_OCStructInit(&TIM_OCInitStructure);
-    TIM_OCInitStructure.TIM_OCMode      = TIM_OCMode_PWM1;
-    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
-    TIM_OCInitStructure.TIM_Pulse       = 0;
-    TIM_OCInitStructure.TIM_OCPolarity  = TIM_OCPolarity_High;
-    TIM_OC3Init(HEATER_TIM, &TIM_OCInitStructure);
-
-    TIM_OC3PreloadConfig(HEATER_TIM, TIM_OCPreload_Enable);
-    TIM_ARRPreloadConfig(HEATER_TIM, ENABLE);
-    TIM_Cmd(HEATER_TIM, ENABLE);
+    /* 机械继电器禁止使用原50 Hz PWM；本阶段仅配置安全关闭输出。 */
+    Heater_Off();
 }
 
 void Heater_SetPower(uint8_t level)
 {
-    switch (level)
-    {
-        case 0:
-            TIM_SetCompare3(HEATER_TIM, HEATER_LOW);
-            break;
-        case 1:
-            TIM_SetCompare3(HEATER_TIM, HEATER_MEDIUM);
-            break;
-        default:
-            TIM_SetCompare3(HEATER_TIM, HEATER_HIGH);
-            break;
-    }
+    /* 保留旧接口供后续迁移。本阶段未接入门反馈和温度保护，任何档位都不吸合。 */
+    (void)level;
+    Heater_Off();
 }
 
 void Heater_Off(void)
 {
-    TIM_SetCompare3(HEATER_TIM, 0);
+    uint32_t clock_ready;
+
+    /* 故障可发生在main初始化前；直接开GPIO时钟，不依赖RTOS或驱动就绪标志。 */
+    RCC->APB2ENR |= RCC_APB2Periph_GPIOA;
+    clock_ready = RCC->APB2ENR;
+    (void)clock_ready;
+    /* 先预装低电平，再切2 MHz推挽输出；PA2不再连接TIM2_CH3。 */
+    GPIOA->BRR = GPIO_Pin_2;
+    GPIOA->CRL = (GPIOA->CRL & ~(0xFUL << 8)) | (0x2UL << 8);
 }

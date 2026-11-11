@@ -2,6 +2,7 @@
 #define APP_H
 
 #include <stdint.h>
+#include "dht11.h"
 
 typedef enum
 {
@@ -46,6 +47,7 @@ typedef struct
     uint32_t remaining_ms;
     uint32_t total_ms;
     uint8_t notice;
+    Dht11Reading environment;
 } AppSnapshot;
 
 void App_Init(uint32_t now);

@@ -3,6 +3,8 @@
 #include "key.h"
 #include "led.h"
 #include "rtos_hooks.h"
+#include "outputs.h"
+#include "buzzer.h"
 
 volatile uint32_t rtos_fault_code = 0;
 volatile uint32_t rtos_fault_line = 0;
@@ -27,6 +29,9 @@ void vApplicationTickHook(void)
 void RTOS_Fatal(uint32_t code)
 {
     __disable_irq();
+    /* 故障路径不等待任务调度：先断开继电器并停转，再静音、记录故障。 */
+    Outputs_EmergencyStop();
+    Buzzer_Stop();
     rtos_fault_code = code;
     LED_ON();
     for (;;)

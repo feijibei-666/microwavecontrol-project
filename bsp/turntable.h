@@ -12,5 +12,7 @@
 void Turntable_Init(void);
 void Turntable_Start(void);
 void Turntable_Stop(void);
+/* 无RTOS、无等待；允许在初始化前或故障中断内调用。 */
+void Turntable_EmergencyStop(void);
 
 #endif

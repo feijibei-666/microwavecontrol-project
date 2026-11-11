@@ -115,6 +115,8 @@ static uint8_t Glyph(char ch, uint8_t col)
         case '<': return (col == 3) ? 0x41 : (col == 2) ? 0x22 : (col == 1) ? 0x14 : (col == 0) ? 0x08 : 0;
         case '.': return (col == 2) ? 0x40 : 0;
         case '&': return (col == 0) ? 0x36 : (col == 1) ? 0x49 : (col == 2) ? 0x55 : (col == 3) ? 0x22 : 0x50;
+        case '%': return (col == 0 || col == 4) ? 0x63 :
+                         (col == 1) ? 0x13 : (col == 2) ? 0x08 : 0x64;
         default: return 0;
     }
 }
@@ -347,6 +349,24 @@ static void Scene(void)
             break;
         default: break;
     }
+    /* 环境读数占独立的七像素行，提示与按键说明仍由 Footer 绘制。 */
+    if (view.environment.status == DHT11_OK)
+    {
+        uint8_t temperature = view.environment.temperature_c;
+        uint8_t humidity = view.environment.humidity_percent;
+        char line[] = "T 00C / H 000%";
+        line[2] = (char)('0' + (temperature / 10U) % 10U);
+        line[3] = (char)('0' + temperature % 10U);
+        line[10] = humidity == 100U ? '1' : ' ';
+        line[11] = (char)('0' + (humidity / 10U) % 10U);
+        line[12] = (char)('0' + humidity % 10U);
+        Center(110, line, C_TEXT, 1);
+    }
+    else
+    {
+        Center(110, view.environment.status == DHT11_WAITING ? "DHT11 WAIT" :
+               "DHT11 NO DATA", C_AMBER, 1);
+    }
     Footer();
 }
 
@@ -410,6 +430,12 @@ void UI_SetSnapshot(const AppSnapshot *snapshot, uint32_t now)
         }
         if (view.notice != snapshot->notice) DirtyRegion(117, 154);
         if (Progress(&view) != Progress(snapshot)) DirtyRegion(103, 106);
+        if (view.environment.status != snapshot->environment.status ||
+            view.environment.temperature_c != snapshot->environment.temperature_c ||
+            view.environment.humidity_percent != snapshot->environment.humidity_percent)
+        {
+            DirtyRegion(110, 116);
+        }
     }
     view = *snapshot;
     has_snapshot = 1;

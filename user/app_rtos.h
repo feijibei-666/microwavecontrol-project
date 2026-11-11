@@ -13,6 +13,11 @@ typedef struct
     volatile uint32_t control_stack_free;
     volatile uint32_t display_stack_free;
     volatile uint32_t queue_overflows;
+    volatile uint32_t buzzer_cycles;
+    volatile uint32_t buzzer_stack_free;
+    volatile uint32_t sensor_cycles;
+    volatile uint32_t sensor_stack_free;
+    volatile uint32_t sensor_status;
 } AppDiagnostics;
 
 extern AppDiagnostics app_diagnostics;

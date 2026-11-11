@@ -5,8 +5,10 @@
 
 /* ����Ƭ��PA2 -> TIM2_CH3����ת�̹��� TIM2 �� 50Hz ʱ��
    ռ�ձȣ�Low 30% / Medium 60% / High 100% */
+/* 上方为历史PWM说明，现已停用。当前PA2普通GPIO，低电平关闭；所有档位均强制关闭。 */
 void Heater_Init(void);
 void Heater_SetPower(uint8_t level);    /* 0=Low 1=Medium 2=High */
+/* 初始化前及中断/故障上下文均可调用，不使用RTOS、延时或堆分配。 */
 void Heater_Off(void);
 
 #endif

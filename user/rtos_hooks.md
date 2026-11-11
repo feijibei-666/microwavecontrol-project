@@ -8,7 +8,7 @@
 
 ## 故障定位
 
-`RTOS_Fatal(code)` 关闭中断、记录故障码、点亮 PC13 LED 后停留，便于调试器观察。`LED_Init()` 应在可能进入该函数之前完成。
+`RTOS_Fatal(code)` 关闭中断，先调用 `Outputs_EmergencyStop()` 关闭 PA2 并停止 PA1 转盘，再调用 `Buzzer_Stop()` 静音，随后记录故障码、点亮 PC13 LED 后停留，便于调试器观察。安全关闭不调用 RTOS API 或延时，即使外设只完成部分初始化也能执行。故障时不移动门舵机。`LED_Init()` 应在可能进入该函数之前完成。
 
 | 调试变量 / 故障码 | 含义 |
 | --- | --- |
@@ -17,5 +17,9 @@
 | `rtos_fault_file` | 断言源码路径，或发生栈溢出的任务名 |
 | `0xA001` | `configASSERT` 失败 |
 | `0xA002` | 内核检测到任务栈溢出 |
+| `0xB001` | HardFault |
+| `0xB002` | MemManage |
+| `0xB003` | BusFault |
+| `0xB004` | UsageFault |
 
 `RTOS_Assert()` 对接 `configASSERT`；`vApplicationStackOverflowHook()` 对接模式 2 栈检查。应用可使用其他故障码调用 `RTOS_Fatal()`，但本模块不复位硬件、不自动重启任务。

@@ -43,6 +43,9 @@ virtualFolder:
         - path: bsp/exti.c
         - path: bsp/turntable.c
         - path: bsp/heater.c
+        - path: bsp/outputs.c
+        - path: bsp/buzzer.c
+        - path: bsp/dht11.c
       folders: []
     - name: library
       files:

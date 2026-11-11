@@ -8,10 +8,16 @@
 #include "key.h"
 #include "delay.h"
 #include "rtos_hooks.h"
+#include "outputs.h"
+#include "buzzer.h"
 
 #define INPUT_STACK_WORDS  192
-#define CONTROL_STACK_WORDS 256
+#define CONTROL_STACK_WORDS 384
 #define DISPLAY_STACK_WORDS 512
+#define BUZZER_STACK_WORDS 192
+#define SENSOR_STACK_WORDS 192
+#define SENSOR_PERIOD_MS   5000U
+#define SENSOR_STALE_MS    (2U * SENSOR_PERIOD_MS)
 #define INPUT_QUEUE_LENGTH 12
 
 typedef struct
@@ -20,14 +26,30 @@ typedef struct
     uint8_t key2;
 } InputEvent;
 
+typedef struct
+{
+    Dht11Reading reading;
+    uint32_t sampled_at;
+} SensorSample;
+
 static StaticTask_t input_tcb, control_tcb, display_tcb;
+static StaticTask_t buzzer_tcb;
+static StaticTask_t sensor_tcb;
 static StackType_t input_stack[INPUT_STACK_WORDS];
 static StackType_t control_stack[CONTROL_STACK_WORDS];
 static StackType_t display_stack[DISPLAY_STACK_WORDS];
+static StackType_t buzzer_stack[BUZZER_STACK_WORDS];
+static StackType_t sensor_stack[SENSOR_STACK_WORDS];
 static StaticQueue_t input_queue_control, snapshot_queue_control;
+static StaticQueue_t buzzer_queue_control;
+static StaticQueue_t sensor_queue_control;
 static uint8_t input_queue_storage[INPUT_QUEUE_LENGTH * sizeof(InputEvent)];
 static uint8_t snapshot_queue_storage[sizeof(AppSnapshot)];
+static uint8_t buzzer_queue_storage[sizeof(uint8_t)];
+static uint8_t sensor_queue_storage[sizeof(SensorSample)];
 static QueueHandle_t input_queue, snapshot_queue;
+static QueueHandle_t buzzer_queue;
+static QueueHandle_t sensor_queue;
 static volatile uint8_t display_ready;
 AppDiagnostics app_diagnostics;
 
@@ -57,24 +79,108 @@ static void InputTask(void *argument)
     }
 }
 
+static void Control_ApplyEffects(AppSnapshot *previous, const AppSnapshot *current,
+                                 uint8_t user_event)
+{
+    uint8_t pulses = 0;
+
+    /* 输出先于提示音和绘屏执行；开门路径由 BSP 保证先停转、断加热。 */
+    Outputs_Apply(current->door_closed, (uint8_t)(current->state == APP_HEATING));
+    if (current->state != previous->state)
+    {
+        if (current->state == APP_HEATING) { pulses = 2; }
+        else if (current->state == APP_COMPLETED) { pulses = 3; }
+        else if (current->state == APP_PAUSED) { pulses = 1; }
+    }
+    if (pulses == 0 && user_event && current->notice != NOTICE_NONE)
+    {
+        /* 每次被拒绝的操作提示一次，不因同一提示持续显示而反复鸣叫。 */
+        pulses = 1;
+    }
+    if (pulses != 0)
+    {
+        /* 最新提示覆盖尚未播放的旧提示；控制任务绝不等待鸣叫完成。 */
+        configASSERT(xQueueOverwrite(buzzer_queue, &pulses) == pdPASS);
+    }
+    *previous = *current;
+}
+
 static void ControlTask(void *argument)
 {
     InputEvent event;
-    AppSnapshot snapshot;
+    AppSnapshot snapshot, previous;
     BaseType_t received;
     uint32_t now;
+    SensorSample sample = {{0, 0, DHT11_WAITING}, 0};
     (void)argument;
+    App_GetSnapshot(&previous);
     for (;;)
     {
         received = xQueueReceive(input_queue, &event, pdMS_TO_TICKS(10));
         now = delay_millis();
         App_Update(now);
-        if (received == pdPASS) { App_HandleKeys(event.key1, event.key2, now); }
         App_GetSnapshot(&snapshot);
+        Control_ApplyEffects(&previous, &snapshot, 0);
+        if (received == pdPASS)
+        {
+            /* 先处理本轮到期停机，再处理按键，避免同次输入跳过安全输出。 */
+            App_HandleKeys(event.key1, event.key2, now);
+            App_GetSnapshot(&snapshot);
+            Control_ApplyEffects(&previous, &snapshot, 1);
+        }
+        /* 控制任务读取最新采样，不等待采集；超时数据不能继续作为有效值显示。 */
+        (void)xQueueReceive(sensor_queue, &sample, 0);
+        snapshot.environment = sample.reading;
+        if ((uint32_t)(now - sample.sampled_at) >= SENSOR_STALE_MS &&
+            snapshot.environment.status == DHT11_OK)
+        {
+            snapshot.environment.status = DHT11_TIMEOUT;
+        }
         /* A one-element mailbox keeps the newest state during transitions. */
         configASSERT(xQueueOverwrite(snapshot_queue, &snapshot) == pdPASS);
         app_diagnostics.control_cycles++;
         app_diagnostics.control_stack_free = uxTaskGetStackHighWaterMark(NULL);
+    }
+}
+
+static void SensorTask(void *argument)
+{
+    TickType_t wake = xTaskGetTickCount();
+    SensorSample sample = {{0, 0, DHT11_WAITING}, 0};
+    (void)argument;
+    Dht11_Init();
+    /* 给上电后的传感器留出稳定时间。TIM1 捕获边沿，任务只等采样周期。 */
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(SENSOR_PERIOD_MS));
+    for (;;)
+    {
+        sample.reading = Dht11_Read();
+        sample.sampled_at = delay_millis();
+        configASSERT(xQueueOverwrite(sensor_queue, &sample) == pdPASS);
+        app_diagnostics.sensor_status = sample.reading.status;
+        app_diagnostics.sensor_cycles++;
+        app_diagnostics.sensor_stack_free = uxTaskGetStackHighWaterMark(NULL);
+        vTaskDelayUntil(&wake, pdMS_TO_TICKS(SENSOR_PERIOD_MS));
+    }
+}
+
+static void BuzzerTask(void *argument)
+{
+    uint8_t pulses;
+    TickType_t wait_ticks;
+    uint32_t now;
+    (void)argument;
+    for (;;)
+    {
+        /* 空闲时阻塞等命令；播放时以 10 ms 步长推进响/静音状态机。 */
+        wait_ticks = Buzzer_IsBusy() ? pdMS_TO_TICKS(10) : portMAX_DELAY;
+        if (xQueueReceive(buzzer_queue, &pulses, wait_ticks) == pdPASS)
+        {
+            now = delay_millis();
+            Buzzer_Start(pulses, now);
+        }
+        Buzzer_Update(delay_millis());
+        app_diagnostics.buzzer_cycles++;
+        app_diagnostics.buzzer_stack_free = uxTaskGetStackHighWaterMark(NULL);
     }
 }
 
@@ -115,15 +221,25 @@ void AppRTOS_Start(void)
                                     input_queue_storage, &input_queue_control);
     snapshot_queue = xQueueCreateStatic(1, sizeof(AppSnapshot),
                                        snapshot_queue_storage, &snapshot_queue_control);
-    if (input_queue == NULL || snapshot_queue == NULL) { RTOS_Fatal(1); }
+    buzzer_queue = xQueueCreateStatic(1, sizeof(uint8_t),
+                                     buzzer_queue_storage, &buzzer_queue_control);
+    sensor_queue = xQueueCreateStatic(1, sizeof(SensorSample),
+                                     sensor_queue_storage, &sensor_queue_control);
+    if (input_queue == NULL || snapshot_queue == NULL || buzzer_queue == NULL ||
+        sensor_queue == NULL)
+    { RTOS_Fatal(1); }
     App_GetSnapshot(&snapshot);
     configASSERT(xQueueOverwrite(snapshot_queue, &snapshot) == pdPASS);
     if (xTaskCreateStatic(InputTask, "Input", INPUT_STACK_WORDS, NULL, 3,
                           input_stack, &input_tcb) == NULL ||
-        xTaskCreateStatic(ControlTask, "Control", CONTROL_STACK_WORDS, NULL, 2,
+        xTaskCreateStatic(ControlTask, "Control", CONTROL_STACK_WORDS, NULL, 4,
                           control_stack, &control_tcb) == NULL ||
+        xTaskCreateStatic(BuzzerTask, "Buzzer", BUZZER_STACK_WORDS, NULL, 2,
+                          buzzer_stack, &buzzer_tcb) == NULL ||
         xTaskCreateStatic(DisplayTask, "Display", DISPLAY_STACK_WORDS, NULL, 1,
-                          display_stack, &display_tcb) == NULL)
+                          display_stack, &display_tcb) == NULL ||
+        xTaskCreateStatic(SensorTask, "Sensor", SENSOR_STACK_WORDS, NULL, 1,
+                          sensor_stack, &sensor_tcb) == NULL)
     { RTOS_Fatal(2); }
     vTaskStartScheduler();
     RTOS_Fatal(3);
