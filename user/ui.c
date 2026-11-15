@@ -190,6 +190,21 @@ static uint8_t Progress(const AppSnapshot *snapshot)
     return (uint8_t)(elapsed * 100 / snapshot->total_ms);
 }
 
+static void TimeLabel(uint16_t seconds, int16_t y, uint8_t completed)
+{
+    char line[] = "SET    S";
+    if (completed)
+    {
+        line[0] = 'R';
+        line[1] = 'U';
+        line[2] = 'N';
+    }
+    line[4] = seconds >= 100U ? (char)('0' + seconds / 100U % 10U) : ' ';
+    line[5] = seconds >= 10U ? (char)('0' + seconds / 10U % 10U) : ' ';
+    line[6] = (char)('0' + seconds % 10U);
+    Center(y, line, C_TEXT, 1);
+}
+
 static const char *NoticeText(uint8_t notice)
 {
     switch (notice)
@@ -200,6 +215,8 @@ static const char *NoticeText(uint8_t notice)
         case NOTICE_PAUSE_FIRST: return "OPEN TO PAUSE";
         case NOTICE_RESUME: return "HOLD K1 TO RESUME";
         case NOTICE_ENTER_TIME: return "SHORT K2 FOR TIME";
+        case NOTICE_OVER_TEMP: return "OVER TEMP";
+        case NOTICE_TEMP_NO_DATA: return "TEMP NO DATA";
         default: return "";
     }
 }
@@ -219,6 +236,7 @@ static void Footer(void)
     switch (view.page)
     {
         case PAGE_WELCOME:
+        case PAGE_IDLE:
             a = "K1  CLOSE & ENTER"; b = "WAITING FOR YOU"; break;
         case PAGE_HOME:
             a = "K2  SET TIME"; b = "HOLD K1  START"; c = "K1  OPEN DOOR"; break;
@@ -227,7 +245,13 @@ static void Footer(void)
         case PAGE_POWER:
             a = "K2  NEXT LEVEL"; b = "HOLD K2  TIME"; c = "HOLD K1  START"; break;
         case PAGE_RUNNING:
-            a = "K1  OPEN TO PAUSE"; b = "CYCLE IN PROGRESS"; break;
+            a = "K1  OPEN TO PAUSE";
+#if RELAY_LED_COUNTDOWN_TEST
+            b = "HOLD K2  TEST STOP";
+#else
+            b = "CYCLE IN PROGRESS";
+#endif
+            break;
         case PAGE_PAUSED:
 #if RELAY_LED_COUNTDOWN_TEST
             if (view.door_closed && !view.door_feedback_closed)
@@ -241,6 +265,8 @@ static void Footer(void)
             break;
         case PAGE_COMPLETED:
             a = "K1  NEXT CYCLE"; b = "READY WHEN YOU ARE"; break;
+        case PAGE_STOPPED:
+            a = "K1  NEW CYCLE"; b = "SET TIME AGAIN"; break;
         default: break;
     }
     Text(13, 124, a, C_TEXT, 1);
@@ -257,19 +283,20 @@ static void Header(void)
 
     switch (view.page)
     {
+        case PAGE_IDLE: title = "STANDBY"; crumb = "WAITING FOR START"; break;
         case PAGE_HOME: title = "HOME"; crumb = "READY TO COOK"; step[1] = '2'; break;
         case PAGE_TIME: title = "TIME"; crumb = "SETUP / 1 OF 2"; step[1] = '3'; break;
         case PAGE_POWER: title = "POWER"; crumb = "SETUP / 2 OF 2"; step[1] = '4'; break;
         case PAGE_RUNNING: title = "HEATING"; crumb = "COOKING CYCLE"; step[1] = '5'; accent = C_GREEN; break;
         case PAGE_PAUSED: title = "PAUSED"; crumb = "CYCLE ON HOLD"; step[1] = '5'; accent = C_AMBER; break;
         case PAGE_COMPLETED: title = "COMPLETE"; crumb = "UNTIL NEXT TIME"; step[1] = '6'; accent = C_GREEN; break;
+        case PAGE_STOPPED: title = "STOPPED"; crumb = "HEATING STOPPED"; accent = C_AMBER; break;
         default: break;
     }
 #if RELAY_LED_COUNTDOWN_TEST
-    /* 页首持续标识低压 LED 测试，状态来自控制任务的运行命令。 */
+    /* 显示输出层执行的命令，通过控制任务快照传递。 */
     if (view.page == PAGE_RUNNING) { title = "RUNNING"; }
-    crumb = (view.state == APP_HEATING && view.door_closed && view.door_feedback_closed) ?
-            "LED TEST / PA2 ON" : "LED TEST / PA2 OFF";
+    crumb = view.relay_active ? "LED TEST / PA2 ON" : "LED TEST / PA2 OFF";
 #endif
     Rect(0, 0, UI_WIDTH, 2, accent);
     Text(8, 10, title, C_TEXT, 1);
@@ -336,6 +363,7 @@ static void Scene(void)
     switch (view.page)
     {
         case PAGE_WELCOME:
+        case PAGE_IDLE:
             Card(38, 70);
             RoundRect(36, 47, 56, 35, 6, C_BORDER);
             RoundRect(39, 50, 42, 29, 4, RGB(6, 23, 38));
@@ -345,12 +373,16 @@ static void Scene(void)
             Rect(45, 57, 2, 10, C_BORDER);
             Rect(50, 54, 2, 13, C_BORDER);
             Center(91, shown_door_closed ? "DOOR CLOSED" : "DOOR OPEN", C_GREEN, 1);
+#ifdef FIRMWARE_VERSION
+            Center(100, "FW " FIRMWARE_VERSION, C_MUTED, 1);
+#endif
             break;
         case PAGE_HOME:
             Card(38, 70);
-            Center(51, "READY", C_GREEN, 2);
+            Center(46, "READY", C_GREEN, 2);
             Center(77, shown_door_closed ? "DOOR CLOSED" : "DOOR OPEN", C_MUTED, 1);
-            Center(94, "LET US GET COOKING", C_TEXT, 1);
+            TimeLabel(view.cook_seconds, 94, 0);
+            Center(65, names[view.power_level % 3], C_TEXT, 1);
             break;
         case PAGE_TIME:
             Card(38, 70);
@@ -395,27 +427,30 @@ static void Scene(void)
             Card(38, 70);
             CheckIcon();
             Center(87, "ALL DONE", C_GREEN, 1);
-            Center(99, "YOUR CYCLE IS OVER", C_MUTED, 1);
+            TimeLabel((uint16_t)(view.total_ms / 1000U), 99, 1);
+            break;
+        case PAGE_STOPPED:
+            Card(38, 70);
+            Center(59, "HEATING STOPPED", C_AMBER, 1);
+            if (view.stop_reason == STOP_OVER_TEMP) { Center(83, "OVER TEMP", C_AMBER, 1); }
+            else if (view.stop_reason == STOP_TEMP_NO_DATA) { Center(83, "TEMP NO DATA", C_AMBER, 1); }
+            else { Center(83, "TEST STOP", C_MUTED, 1); }
             break;
         default: break;
     }
-    /* 环境读数占独立的七像素行，提示与按键说明仍由 Footer 绘制。 */
+    /* 环境温度占独立的七像素行，湿度保留在 DHT11 原始读取中。 */
     if (view.environment.status == DHT11_OK)
     {
         uint8_t temperature = view.environment.temperature_c;
-        uint8_t humidity = view.environment.humidity_percent;
-        char line[] = "T 00C / H 000%";
-        line[2] = (char)('0' + (temperature / 10U) % 10U);
-        line[3] = (char)('0' + temperature % 10U);
-        line[10] = humidity == 100U ? '1' : ' ';
-        line[11] = (char)('0' + (humidity / 10U) % 10U);
-        line[12] = (char)('0' + humidity % 10U);
+        char line[] = "TEMP 00C";
+        line[5] = (char)('0' + (temperature / 10U) % 10U);
+        line[6] = (char)('0' + temperature % 10U);
         Center(110, line, C_TEXT, 1);
     }
     else
     {
-        Center(110, view.environment.status == DHT11_WAITING ? "DHT11 WAIT" :
-               "DHT11 NO DATA", C_AMBER, 1);
+        Center(110, view.environment.status == DHT11_WAITING ? "TEMP WAIT" :
+               "TEMP NO DATA", C_AMBER, 1);
     }
     Footer();
 }
@@ -461,7 +496,7 @@ void UI_SetSnapshot(const AppSnapshot *snapshot, uint32_t now)
         direction_back = (uint8_t)(has_snapshot && (snapshot->page < view.page));
         /* Pause and completion preempt a decorative transition immediately. */
         animating = (uint8_t)(has_snapshot && (snapshot->page != PAGE_PAUSED) &&
-                             (snapshot->page != PAGE_COMPLETED));
+                             (snapshot->page != PAGE_COMPLETED) && (snapshot->page != PAGE_STOPPED));
         animation_band = 0;
         previous_front = -1;
         dirty_bands = ALL_BANDS;
@@ -475,13 +510,11 @@ void UI_SetSnapshot(const AppSnapshot *snapshot, uint32_t now)
         if (view.power_level != snapshot->power_level) DirtyRegion(38, 110);
         if (view.door_closed != snapshot->door_closed)
         {
-#if RELAY_LED_COUNTDOWN_TEST
-            DirtyRegion(20, 35);
-#endif
             DirtyRegion(88, 106);
             DirtyRegion(117, 154);
         }
 #if RELAY_LED_COUNTDOWN_TEST
+        if (view.relay_active != snapshot->relay_active) DirtyRegion(20, 26);
         if (view.door_feedback_closed != snapshot->door_feedback_closed)
         {
             DirtyRegion(20, 35);
@@ -499,8 +532,7 @@ void UI_SetSnapshot(const AppSnapshot *snapshot, uint32_t now)
         if (view.relay_test_finished != snapshot->relay_test_finished) DirtyRegion(119, 140);
 #endif
         if (view.environment.status != snapshot->environment.status ||
-            view.environment.temperature_c != snapshot->environment.temperature_c ||
-            view.environment.humidity_percent != snapshot->environment.humidity_percent)
+            view.environment.temperature_c != snapshot->environment.temperature_c)
         {
             DirtyRegion(110, 116);
         }

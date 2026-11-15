@@ -11,7 +11,8 @@ typedef enum
     APP_SETTING,
     APP_HEATING,
     APP_PAUSED,
-    APP_COMPLETED
+    APP_COMPLETED,
+    APP_STOPPED
 } AppState;
 
 typedef enum
@@ -23,6 +24,8 @@ typedef enum
     PAGE_RUNNING,
     PAGE_PAUSED,
     PAGE_COMPLETED,
+    PAGE_IDLE,
+    PAGE_STOPPED,
 #if RELAY_PULSE_TEST
     PAGE_RELAY_TEST,
 #endif
@@ -37,8 +40,18 @@ typedef enum
     NOTICE_RUNNING,
     NOTICE_PAUSE_FIRST,
     NOTICE_RESUME,
-    NOTICE_ENTER_TIME
+    NOTICE_ENTER_TIME,
+    NOTICE_OVER_TEMP,
+    NOTICE_TEMP_NO_DATA
 } AppNotice;
+
+typedef enum
+{
+    STOP_NONE,
+    STOP_OVER_TEMP,
+    STOP_TEMP_NO_DATA,
+    STOP_TEST
+} AppStopReason;
 
 typedef struct
 {
@@ -54,8 +67,9 @@ typedef struct
     uint32_t remaining_ms;
     uint32_t total_ms;
     uint8_t notice;
+    uint8_t stop_reason;
     Dht11Reading environment;
-#if RELAY_PULSE_TEST
+#if RELAY_PULSE_TEST || RELAY_LED_COUNTDOWN_TEST
     uint8_t relay_active;
 #endif
 #if PTC_BENCH_TEST
@@ -65,6 +79,7 @@ typedef struct
 
 void App_Init(uint32_t now);
 void App_Update(uint32_t now);
+void App_SetTemperature(Dht11Reading reading);
 #if RELAY_LED_COUNTDOWN_TEST
 void App_SetDoorFeedback(uint8_t closed);
 #endif

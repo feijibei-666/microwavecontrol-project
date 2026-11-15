@@ -125,8 +125,13 @@
 /*!< Uncomment the following line if you need to relocate your vector Table in
      Internal SRAM. */ 
 /* #define VECT_TAB_SRAM */
-#define VECT_TAB_OFFSET  0x0 /*!< Vector Table base offset field. 
-                                  This value must be a multiple of 0x200. */
+#if defined(UPGRADE_APP) && UPGRADE_APP
+#include "firmware_layout.h"
+/* The APP linker and VTOR must use the same Flash base. */
+#define VECT_TAB_OFFSET FIRMWARE_APP_OFFSET
+#else
+#define VECT_TAB_OFFSET 0x0
+#endif
 
 
 /**

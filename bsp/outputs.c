@@ -26,25 +26,34 @@ void Outputs_Init(void)
     outputs_ready = 1;
 }
 
-void Outputs_Apply(uint8_t door_closed, uint8_t running)
+uint8_t Outputs_Apply(uint8_t door_closed, uint8_t running, uint8_t relay_requested)
 {
+    uint8_t relay_command = 0;
+
     if (!outputs_ready || outputs_faulted)
     {
         Heater_Off();
         Turntable_EmergencyStop();
-        return;
+        return 0;
     }
     door_closed = (uint8_t)(door_closed != 0);
     running = (uint8_t)(running != 0 && door_closed);
 
 #if RELAY_LED_COUNTDOWN_TEST
-    /* 联调只驱动 LED 测试回路。先处理 PA2，再处理舵机，运行中保持电平。 */
-    if (running) { Heater_TestEnergize(); }
-    else { Heater_Off(); }
+    /* 运行许可约束继电器请求。先更新 PA2，再处理门舵机和转盘。 */
+    relay_command = (uint8_t)(running && relay_requested);
 #else
-    /* 常规固件维持关闭，功率档位仍只用于界面演示。 */
-    Heater_Off();
+    /* 默认构建只演示倒计时。 */
+    (void)relay_requested;
 #endif
+
+#if RELAY_LED_COUNTDOWN_TEST
+    if (relay_command) { Heater_TestEnergize(); }
+    else
+#endif
+    {
+        Heater_Off();
+    }
 
     /* 开门、暂停或完成的停转指令先于门舵机位置更新。 */
     if (!running)
@@ -61,6 +70,7 @@ void Outputs_Apply(uint8_t door_closed, uint8_t running)
         Turntable_Start();
     }
     last_running = running;
+    return relay_command;
 }
 
 void Outputs_EmergencyStop(void)

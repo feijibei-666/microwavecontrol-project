@@ -172,22 +172,33 @@ static void ControlTask(void *argument)
     }
 }
 #else
-static void Control_ApplyEffects(AppSnapshot *previous, const AppSnapshot *current,
+static void Control_ApplyEffects(AppSnapshot *previous, AppSnapshot *current,
                                  uint8_t user_event)
 {
     uint8_t pulses = 0;
     uint8_t running = (uint8_t)(current->state == APP_HEATING);
+    uint8_t relay_requested = 0;
 
     /* 输出先于提示音和绘屏执行；开门路径由 BSP 保证先停转、断加热。 */
 #if RELAY_LED_COUNTDOWN_TEST
+    static const uint16_t on_ms[] = {10000U, 14000U, 20000U};
+    uint32_t elapsed_ms = current->total_ms - current->remaining_ms;
+
     running = (uint8_t)(running && current->door_feedback_closed);
+    /* 按累计运行时间计相位，暂停期间窗口冻结。仅在有效档位请求吸合。 */
+    relay_requested = (uint8_t)(running && current->remaining_ms > 0U &&
+        current->power_level < sizeof(on_ms) / sizeof(on_ms[0]) &&
+        elapsed_ms % 20000U < on_ms[current->power_level]);
+    current->relay_active = Outputs_Apply(current->door_closed, running, relay_requested);
+#else
+    (void)Outputs_Apply(current->door_closed, running, relay_requested);
 #endif
-    Outputs_Apply(current->door_closed, running);
     if (current->state != previous->state)
     {
         if (current->state == APP_HEATING) { pulses = 2; }
         else if (current->state == APP_COMPLETED) { pulses = 3; }
         else if (current->state == APP_PAUSED) { pulses = 1; }
+        else if (current->state == APP_STOPPED) { pulses = 4; }
     }
     if (pulses == 0 && user_event && current->notice != NOTICE_NONE)
     {
@@ -208,6 +219,8 @@ static void ControlTask(void *argument)
     AppSnapshot snapshot, previous;
     BaseType_t received;
     uint32_t now;
+    Dht11Reading effective_reading;
+    uint8_t just_stopped;
     SensorSample sample = {{0, 0, DHT11_WAITING}, 0};
     (void)argument;
     App_GetSnapshot(&previous);
@@ -215,6 +228,15 @@ static void ControlTask(void *argument)
     {
         received = xQueueReceive(input_queue, &event, pdMS_TO_TICKS(10));
         now = delay_millis();
+        /* 温度保护先于计时和按键。同轮的长按不能绕开过温或读数超时。 */
+        (void)xQueueReceive(sensor_queue, &sample, 0);
+        effective_reading = sample.reading;
+        if ((uint32_t)(now - sample.sampled_at) >= SENSOR_STALE_MS &&
+            effective_reading.status == DHT11_OK)
+        {
+            effective_reading.status = DHT11_TIMEOUT;
+        }
+        App_SetTemperature(effective_reading);
 #if RELAY_LED_COUNTDOWN_TEST
         if (received == pdPASS)
         {
@@ -224,21 +246,15 @@ static void ControlTask(void *argument)
 #endif
         App_Update(now);
         App_GetSnapshot(&snapshot);
+        just_stopped = (uint8_t)(snapshot.state == APP_STOPPED && previous.state != APP_STOPPED);
         Control_ApplyEffects(&previous, &snapshot, 0);
-        if (received == pdPASS && (event.key1 != KEY_NONE || event.key2 != KEY_NONE))
+        if (!just_stopped && received == pdPASS &&
+            (event.key1 != KEY_NONE || event.key2 != KEY_NONE))
         {
             /* 先处理本轮到期停机，再处理按键，避免同次输入跳过安全输出。 */
             App_HandleKeys(event.key1, event.key2, now);
             App_GetSnapshot(&snapshot);
             Control_ApplyEffects(&previous, &snapshot, 1);
-        }
-        /* 控制任务读取最新采样，不等待采集；超时数据不能继续作为有效值显示。 */
-        (void)xQueueReceive(sensor_queue, &sample, 0);
-        snapshot.environment = sample.reading;
-        if ((uint32_t)(now - sample.sampled_at) >= SENSOR_STALE_MS &&
-            snapshot.environment.status == DHT11_OK)
-        {
-            snapshot.environment.status = DHT11_TIMEOUT;
         }
         /* A one-element mailbox keeps the newest state during transitions. */
         configASSERT(xQueueOverwrite(snapshot_queue, &snapshot) == pdPASS);
