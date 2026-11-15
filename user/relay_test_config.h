@@ -1,0 +1,16 @@
+#ifndef RELAY_TEST_CONFIG_H
+#define RELAY_TEST_CONFIG_H
+
+#if (RELAY_NO_LOAD_TEST + RELAY_LED_COUNTDOWN_TEST + PTC_BENCH_TEST) > 1
+#error Select only one relay test mode
+#endif
+
+#define RELAY_PULSE_TEST (RELAY_NO_LOAD_TEST || PTC_BENCH_TEST)
+
+#if PTC_BENCH_TEST
+#define RELAY_TEST_PULSE_MS 10000U
+#elif RELAY_NO_LOAD_TEST
+#define RELAY_TEST_PULSE_MS 1000U
+#endif
+
+#endif

@@ -8,6 +8,12 @@
 
 界面直接消费 `AppSnapshot` 值副本，不访问控制任务内部变量，也不修改门、LED 和倒计时状态。
 
+空载诊断构建显示独立的 `RELAY TEST / NO LOAD` 页。`PA2 COMMAND ON/OFF` 来自控制任务快照，表示软件驱动命令。命令变化时只刷新状态所在条带。
+
+`PTC_BENCH_TEST=1` 使用 `PTC TEST / 5V / 10 SEC` 标识。完成或取消后显示 `TEST COMPLETE` 和 `RESET TO RETEST`，重新武装需要复位。
+
+LED 倒计时联调构建在所有页面顶栏显示 `LED TEST / PA2 ON` 或 `LED TEST / PA2 OFF`，下一行显示 `PB10 CLOSED` 或 `PB10 OPEN`。运行页标题为 `RUNNING`。PA2 状态文字来自快照中的运行、软件门命令和物理门反馈，表示输出命令。门反馈变化时更新状态栏、门提示和暂停页操作提示。
+
 ## 页面
 
 | 页面 | 重点信息 |

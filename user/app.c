@@ -18,15 +18,41 @@ static MicrowaveApp app;
 static void App_SetDoor(uint8_t closed)
 {
     app.view.door_closed = closed;
+#if !RELAY_LED_COUNTDOWN_TEST
     if (closed) { LED_OFF(); }
     else { LED_ON(); }
+#endif
 }
+
+static void App_Pause(void)
+{
+    app.view.state = APP_PAUSED;
+    app.view.page = PAGE_PAUSED;
+    app.view.notice = NOTICE_NONE;
+}
+
+#if RELAY_LED_COUNTDOWN_TEST
+void App_SetDoorFeedback(uint8_t closed)
+{
+    app.view.door_feedback_closed = closed;
+    if (closed) { LED_OFF(); }
+    else
+    {
+        LED_ON();
+        /* 开门反馈保留剩余时间。反馈恢复闭合后仍等待显式恢复键。 */
+        if (app.view.state == APP_HEATING) { App_Pause(); }
+    }
+}
+#endif
 
 void App_Init(uint32_t now)
 {
     app.view.state = APP_STANDBY;
     app.view.page = PAGE_WELCOME;
     App_SetDoor(0);
+#if RELAY_LED_COUNTDOWN_TEST
+    App_SetDoorFeedback(0);
+#endif
     app.view.power_level = 1;
     app.view.cook_seconds = 0;
     app.view.display_seconds = 0;
@@ -76,8 +102,8 @@ static void App_Key1(uint8_t event, uint32_t now)
         App_SetDoor((uint8_t)!app.view.door_closed);
         if (app.view.state == APP_HEATING)
         {
-            app.view.state = APP_PAUSED;
-            app.view.page = PAGE_PAUSED;
+            /* 短按开门也可主动暂停，关断不等待门舵机到位。 */
+            App_Pause();
         }
         else if (app.view.state == APP_PAUSED)
         {
@@ -96,7 +122,12 @@ static void App_Key1(uint8_t event, uint32_t now)
     }
     else if (event == KEY_LONG)
     {
-        if (!app.view.door_closed) { App_Notice(NOTICE_CLOSE_DOOR, now); }
+        if (!app.view.door_closed
+#if RELAY_LED_COUNTDOWN_TEST
+            || !app.view.door_feedback_closed
+#endif
+           )
+        { App_Notice(NOTICE_CLOSE_DOOR, now); }
         else if (app.view.state == APP_HEATING) { App_Notice(NOTICE_RUNNING, now); }
         else if (app.view.state != APP_PAUSED && app.view.cook_seconds == 0)
         { App_Notice(NOTICE_SET_TIME, now); }
@@ -119,6 +150,7 @@ static void App_Key2(uint8_t event, uint32_t now)
 {
     if (event == KEY_NONE) { return; }
     if (!app.view.door_closed) { App_Notice(NOTICE_CLOSE_DOOR, now); return; }
+    /* 进入设置后可继续编辑参数，物理门反馈只限制启动和恢复。 */
     if (app.view.state == APP_HEATING) { App_Notice(NOTICE_PAUSE_FIRST, now); return; }
     if (app.view.state == APP_PAUSED) { App_Notice(NOTICE_RESUME, now); return; }
     app.view.notice = NOTICE_NONE;

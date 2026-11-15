@@ -28,17 +28,25 @@ void Outputs_Init(void)
 
 void Outputs_Apply(uint8_t door_closed, uint8_t running)
 {
-    /* Control任务是正常输出的唯一所有者；此阶段每次更新都再次钳制加热关闭。 */
-    Heater_Off();
     if (!outputs_ready || outputs_faulted)
     {
+        Heater_Off();
         Turntable_EmergencyStop();
         return;
     }
     door_closed = (uint8_t)(door_closed != 0);
     running = (uint8_t)(running != 0 && door_closed);
 
-    /* 开门/暂停/完成的优先动作是停转，必须先于门舵机位置更新。 */
+#if RELAY_LED_COUNTDOWN_TEST
+    /* 联调只驱动 LED 测试回路。先处理 PA2，再处理舵机，运行中保持电平。 */
+    if (running) { Heater_TestEnergize(); }
+    else { Heater_Off(); }
+#else
+    /* 常规固件维持关闭，功率档位仍只用于界面演示。 */
+    Heater_Off();
+#endif
+
+    /* 开门、暂停或完成的停转指令先于门舵机位置更新。 */
     if (!running)
     {
         Turntable_Stop();

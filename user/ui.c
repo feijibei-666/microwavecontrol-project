@@ -229,6 +229,13 @@ static void Footer(void)
         case PAGE_RUNNING:
             a = "K1  OPEN TO PAUSE"; b = "CYCLE IN PROGRESS"; break;
         case PAGE_PAUSED:
+#if RELAY_LED_COUNTDOWN_TEST
+            if (view.door_closed && !view.door_feedback_closed)
+            {
+                a = "CLOSE DOOR FIRST"; b = "THEN HOLD K1";
+                break;
+            }
+#endif
             a = view.door_closed ? "HOLD K1  RESUME" : "K1  CLOSE DOOR";
             b = view.door_closed ? "K1  REOPEN DOOR" : "THEN HOLD K1";
             break;
@@ -258,11 +265,23 @@ static void Header(void)
         case PAGE_COMPLETED: title = "COMPLETE"; crumb = "UNTIL NEXT TIME"; step[1] = '6'; accent = C_GREEN; break;
         default: break;
     }
+#if RELAY_LED_COUNTDOWN_TEST
+    /* 页首持续标识低压 LED 测试，状态来自控制任务的运行命令。 */
+    if (view.page == PAGE_RUNNING) { title = "RUNNING"; }
+    crumb = (view.state == APP_HEATING && view.door_closed && view.door_feedback_closed) ?
+            "LED TEST / PA2 ON" : "LED TEST / PA2 OFF";
+#endif
     Rect(0, 0, UI_WIDTH, 2, accent);
     Text(8, 10, title, C_TEXT, 1);
     RoundRect(99, 7, 22, 14, 5, C_CARD);
     Text(104, 11, step, accent, 1);
+#if RELAY_LED_COUNTDOWN_TEST
+    /* 与 PA2 命令分行，所有页面都能查看实际触点。 */
+    Text(8, 20, crumb, C_MUTED, 1);
+    Text(8, 29, view.door_feedback_closed ? "PB10 CLOSED" : "PB10 OPEN", C_MUTED, 1);
+#else
     Text(8, 25, crumb, C_MUTED, 1);
+#endif
     if (animating) Text(113, 25, direction_back ? "<" : ">", accent, 1);
 }
 
@@ -277,11 +296,42 @@ static void CheckIcon(void)
 static void Scene(void)
 {
     uint8_t i;
+    uint8_t shown_door_closed = view.door_closed;
     int16_t x;
     uint16_t selection;
     static const char *const names[3] = {"LOW", "MEDIUM", "HIGH"};
     static const char *const short_names[3] = {"LOW", "MED", "HIGH"};
 
+#if RELAY_PULSE_TEST
+    if (view.page == PAGE_RELAY_TEST)
+    {
+#if PTC_BENCH_TEST
+        Center(13, "PTC TEST", C_TEXT, 2);
+        Center(34, "5V / 10 SEC", C_AMBER, 1);
+#else
+        Center(13, "RELAY TEST", C_TEXT, 2);
+        Center(34, "NO LOAD", C_AMBER, 1);
+#endif
+        Card(47, 62);
+        Center(58, "PA2 COMMAND", C_MUTED, 1);
+        Center(77, view.relay_active ? "ON" : "OFF",
+               view.relay_active ? C_AMBER : C_GREEN, 2);
+#if PTC_BENCH_TEST
+        /* 结束后保持锁定，需复位才能重新武装试热。 */
+        Center(119, view.relay_test_finished ? "TEST COMPLETE" : "HOLD K1 TO START",
+               C_TEXT, 1);
+        Center(134, view.relay_test_finished ? "RESET TO RETEST" : "K2 TO STOP",
+               C_MUTED, 1);
+#else
+        Center(128, "HOLD K1 FOR 1 SEC", C_TEXT, 1);
+#endif
+        return;
+    }
+#endif
+
+#if RELAY_LED_COUNTDOWN_TEST
+    shown_door_closed = view.door_feedback_closed;
+#endif
     Header();
     switch (view.page)
     {
@@ -294,12 +344,12 @@ static void Scene(void)
             Rect(45, 72, 29, 2, C_ACCENT);
             Rect(45, 57, 2, 10, C_BORDER);
             Rect(50, 54, 2, 13, C_BORDER);
-            Center(91, "DOOR OPEN", C_GREEN, 1);
+            Center(91, shown_door_closed ? "DOOR CLOSED" : "DOOR OPEN", C_GREEN, 1);
             break;
         case PAGE_HOME:
             Card(38, 70);
             Center(51, "READY", C_GREEN, 2);
-            Center(77, "DOOR CLOSED", C_MUTED, 1);
+            Center(77, shown_door_closed ? "DOOR CLOSED" : "DOOR OPEN", C_MUTED, 1);
             Center(94, "LET US GET COOKING", C_TEXT, 1);
             break;
         case PAGE_TIME:
@@ -338,7 +388,7 @@ static void Scene(void)
             }
             else
             {
-                Center(94, view.door_closed ? "DOOR CLOSED" : "DOOR OPEN", C_AMBER, 1);
+                Center(94, shown_door_closed ? "DOOR CLOSED" : "DOOR OPEN", C_AMBER, 1);
             }
             break;
         case PAGE_COMPLETED:
@@ -425,11 +475,29 @@ void UI_SetSnapshot(const AppSnapshot *snapshot, uint32_t now)
         if (view.power_level != snapshot->power_level) DirtyRegion(38, 110);
         if (view.door_closed != snapshot->door_closed)
         {
+#if RELAY_LED_COUNTDOWN_TEST
+            DirtyRegion(20, 35);
+#endif
             DirtyRegion(88, 106);
             DirtyRegion(117, 154);
         }
+#if RELAY_LED_COUNTDOWN_TEST
+        if (view.door_feedback_closed != snapshot->door_feedback_closed)
+        {
+            DirtyRegion(20, 35);
+            DirtyRegion(77, 100);
+            DirtyRegion(117, 154);
+        }
+#endif
         if (view.notice != snapshot->notice) DirtyRegion(117, 154);
         if (Progress(&view) != Progress(snapshot)) DirtyRegion(103, 106);
+#if RELAY_PULSE_TEST
+        /* 单页诊断只重绘 PA2 指令所在条带。 */
+        if (view.relay_active != snapshot->relay_active) DirtyRegion(77, 90);
+#endif
+#if PTC_BENCH_TEST
+        if (view.relay_test_finished != snapshot->relay_test_finished) DirtyRegion(119, 140);
+#endif
         if (view.environment.status != snapshot->environment.status ||
             view.environment.temperature_c != snapshot->environment.temperature_c ||
             view.environment.humidity_percent != snapshot->environment.humidity_percent)

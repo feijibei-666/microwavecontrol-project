@@ -10,6 +10,11 @@
 #include "rtos_hooks.h"
 #include "outputs.h"
 #include "buzzer.h"
+#if RELAY_PULSE_TEST
+#include "heater.h"
+#elif RELAY_LED_COUNTDOWN_TEST
+#include "door_switch.h"
+#endif
 
 #define INPUT_STACK_WORDS  192
 #define CONTROL_STACK_WORDS 384
@@ -24,6 +29,9 @@ typedef struct
 {
     uint8_t key1;
     uint8_t key2;
+#if RELAY_LED_COUNTDOWN_TEST
+    uint8_t door_feedback_closed;
+#endif
 } InputEvent;
 
 typedef struct
@@ -57,20 +65,46 @@ static void InputTask(void *argument)
 {
     TickType_t wake = xTaskGetTickCount();
     InputEvent event;
+#if RELAY_LED_COUNTDOWN_TEST
+    uint8_t door_changed;
+    uint8_t previous_door_closed = 0;
+    uint8_t key1_held_at_close = 0;
+#endif
     (void)argument;
     for (;;)
     {
+#if RELAY_LED_COUNTDOWN_TEST
+        event.door_feedback_closed = DoorSwitch_Sample(delay_millis());
+        door_changed = (uint8_t)(event.door_feedback_closed != previous_door_closed);
+        previous_door_closed = event.door_feedback_closed;
+        if (door_changed && event.door_feedback_closed)
+        {
+            key1_held_at_close = (uint8_t)(KEY1_READ() == KEY_ACTIVE_LEVEL);
+        }
+#endif
+        event.key1 = KEY_NONE;
+        event.key2 = KEY_NONE;
         if (display_ready)
         {
             event.key1 = KEY1_Scan();
             event.key2 = KEY2_Scan();
-            if (event.key1 != KEY_NONE || event.key2 != KEY_NONE)
+#if RELAY_LED_COUNTDOWN_TEST
+            /* 关门前就按住 KEY1 时，本次长按不能启动或恢复。 */
+            if (key1_held_at_close && event.key1 == KEY_LONG) { event.key1 = KEY_NONE; }
+#endif
+        }
+#if RELAY_LED_COUNTDOWN_TEST
+        if (KEY1_READ() != KEY_ACTIVE_LEVEL) { key1_held_at_close = 0; }
+        /* 门事件不依赖 LCD 就绪，与同拍按键一起送 Control 优先处理。 */
+        if (door_changed || event.key1 != KEY_NONE || event.key2 != KEY_NONE)
+#else
+        if (event.key1 != KEY_NONE || event.key2 != KEY_NONE)
+#endif
+        {
+            if (xQueueSend(input_queue, &event, 0) != pdPASS)
             {
-                if (xQueueSend(input_queue, &event, 0) != pdPASS)
-                {
-                    app_diagnostics.queue_overflows++;
-                    RTOS_Fatal(4);
-                }
+                app_diagnostics.queue_overflows++;
+                RTOS_Fatal(4);
             }
         }
         app_diagnostics.input_cycles++;
@@ -79,13 +113,76 @@ static void InputTask(void *argument)
     }
 }
 
+#if RELAY_PULSE_TEST
+static void ControlTask(void *argument)
+{
+    AppSnapshot snapshot = {0};
+    InputEvent event;
+    TickType_t energized_at = 0;
+    TickType_t now;
+    BaseType_t received;
+    (void)argument;
+    snapshot.page = PAGE_RELAY_TEST;
+
+    for (;;)
+    {
+        /* 空闲时等待按键。吸合时每 10 ms 醒来检查截止时间，不阻塞其他任务。 */
+        received = xQueueReceive(input_queue, &event,
+                                 snapshot.relay_active ? pdMS_TO_TICKS(10) : portMAX_DELAY);
+        now = xTaskGetTickCount();
+        if (snapshot.relay_active)
+        {
+#if PTC_BENCH_TEST
+            /* 有负载的试热中，KEY2 短按或长按直接取消输出。 */
+            if (!(received == pdPASS && event.key2 != KEY_NONE) &&
+                (TickType_t)(now - energized_at) < pdMS_TO_TICKS(RELAY_TEST_PULSE_MS))
+#else
+            /* 吸合期间忽略新的按键，包括截止这一轮收到的按键，避免延长脉冲。 */
+            if ((TickType_t)(now - energized_at) < pdMS_TO_TICKS(RELAY_TEST_PULSE_MS))
+#endif
+            {
+                continue;
+            }
+            Heater_Off();
+            snapshot.relay_active = 0;
+#if PTC_BENCH_TEST
+            snapshot.relay_test_finished = 1;
+#endif
+        }
+        else if (received == pdPASS && event.key1 == KEY_LONG
+#if PTC_BENCH_TEST
+                 && event.key2 == KEY_NONE && !snapshot.relay_test_finished
+#endif
+                )
+        {
+            /* 消抖器每次长按只发一个事件；松开再按才会触发下一次。 */
+            Heater_TestEnergize();
+            energized_at = xTaskGetTickCount();
+            snapshot.relay_active = 1;
+        }
+        else
+        {
+            continue;
+        }
+
+        /* 先更新 PA2，再通知显示任务。LCD 只显示指令，不能测量触点状态。 */
+        configASSERT(xQueueOverwrite(snapshot_queue, &snapshot) == pdPASS);
+        app_diagnostics.control_cycles++;
+        app_diagnostics.control_stack_free = uxTaskGetStackHighWaterMark(NULL);
+    }
+}
+#else
 static void Control_ApplyEffects(AppSnapshot *previous, const AppSnapshot *current,
                                  uint8_t user_event)
 {
     uint8_t pulses = 0;
+    uint8_t running = (uint8_t)(current->state == APP_HEATING);
 
     /* 输出先于提示音和绘屏执行；开门路径由 BSP 保证先停转、断加热。 */
-    Outputs_Apply(current->door_closed, (uint8_t)(current->state == APP_HEATING));
+#if RELAY_LED_COUNTDOWN_TEST
+    running = (uint8_t)(running && current->door_feedback_closed);
+#endif
+    Outputs_Apply(current->door_closed, running);
     if (current->state != previous->state)
     {
         if (current->state == APP_HEATING) { pulses = 2; }
@@ -118,10 +215,17 @@ static void ControlTask(void *argument)
     {
         received = xQueueReceive(input_queue, &event, pdMS_TO_TICKS(10));
         now = delay_millis();
+#if RELAY_LED_COUNTDOWN_TEST
+        if (received == pdPASS)
+        {
+            /* 先处理开门，再走计时和输出。按键无法抢在同拍门反馈之前启动。 */
+            App_SetDoorFeedback(event.door_feedback_closed);
+        }
+#endif
         App_Update(now);
         App_GetSnapshot(&snapshot);
         Control_ApplyEffects(&previous, &snapshot, 0);
-        if (received == pdPASS)
+        if (received == pdPASS && (event.key1 != KEY_NONE || event.key2 != KEY_NONE))
         {
             /* 先处理本轮到期停机，再处理按键，避免同次输入跳过安全输出。 */
             App_HandleKeys(event.key1, event.key2, now);
@@ -142,6 +246,8 @@ static void ControlTask(void *argument)
         app_diagnostics.control_stack_free = uxTaskGetStackHighWaterMark(NULL);
     }
 }
+
+#endif
 
 static void SensorTask(void *argument)
 {
@@ -214,9 +320,17 @@ static void DisplayTask(void *argument)
 
 void AppRTOS_Start(void)
 {
-    AppSnapshot snapshot;
+    AppSnapshot snapshot = {0};
     display_ready = 0;
+#if RELAY_PULSE_TEST
+    snapshot.page = PAGE_RELAY_TEST;
+#else
+#if RELAY_LED_COUNTDOWN_TEST
+    DoorSwitch_Init();
+#endif
     App_Init(0);
+    App_GetSnapshot(&snapshot);
+#endif
     input_queue = xQueueCreateStatic(INPUT_QUEUE_LENGTH, sizeof(InputEvent),
                                     input_queue_storage, &input_queue_control);
     snapshot_queue = xQueueCreateStatic(1, sizeof(AppSnapshot),
@@ -228,7 +342,6 @@ void AppRTOS_Start(void)
     if (input_queue == NULL || snapshot_queue == NULL || buzzer_queue == NULL ||
         sensor_queue == NULL)
     { RTOS_Fatal(1); }
-    App_GetSnapshot(&snapshot);
     configASSERT(xQueueOverwrite(snapshot_queue, &snapshot) == pdPASS);
     if (xTaskCreateStatic(InputTask, "Input", INPUT_STACK_WORDS, NULL, 3,
                           input_stack, &input_tcb) == NULL ||

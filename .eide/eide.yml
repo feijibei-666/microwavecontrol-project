@@ -46,6 +46,7 @@ virtualFolder:
         - path: bsp/outputs.c
         - path: bsp/buzzer.c
         - path: bsp/dht11.c
+        - path: bsp/door_switch.c
       folders: []
     - name: library
       files:

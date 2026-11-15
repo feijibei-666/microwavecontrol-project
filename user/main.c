@@ -16,8 +16,10 @@ int main(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
     delay_init();
     KEY_Init();
+#if !RELAY_PULSE_TEST
     /* 双舵机在调度器启动前进入开门、停转状态，本阶段加热始终关闭。 */
     Outputs_Init();
+#endif
     AppRTOS_Start();
     for (;;) { /* Scheduler failure is handled by RTOS_Fatal(). */ }
 }

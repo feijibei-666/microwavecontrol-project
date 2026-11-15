@@ -13,10 +13,18 @@ void Heater_Init(void)
 
 void Heater_SetPower(uint8_t level)
 {
-    /* 保留旧接口供后续迁移。本阶段未接入门反馈和温度保护，任何档位都不吸合。 */
+    /* 功率档位只用于界面演示。空载诊断通过单独的编译入口触发。 */
     (void)level;
     Heater_Off();
 }
+
+#if RELAY_PULSE_TEST || RELAY_LED_COUNTDOWN_TEST
+void Heater_TestEnergize(void)
+{
+    /* main 已初始化 PA2，测试路径只设置对应的输出位。 */
+    GPIOA->BSRR = GPIO_Pin_2;
+}
+#endif
 
 void Heater_Off(void)
 {
