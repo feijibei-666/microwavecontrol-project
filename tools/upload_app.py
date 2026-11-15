@@ -51,16 +51,28 @@ def discover(port, ready_timeout):
     raise RuntimeError("Bootloader 未响应。请按住 KEY2 复位，再运行上传命令。")
 
 
-def upload(port, image, ready_timeout):
-    print("等待 Bootloader。按住 KEY2 复位，进入升级模式后松开。", flush=True)
+def upload(port, image, ready_timeout, *, on_status=None, on_progress=None):
+    """Upload a validated image; optionally report status and ACKed byte counts."""
+    def report(message):
+        if on_status is None:
+            print(message, flush=True)
+        else:
+            on_status(message)
+
+    total = len(image)
+    report("等待 Bootloader。按住 KEY2 复位，进入升级模式后松开。")
     port.reset_input_buffer()
     discover(port, ready_timeout)
 
-    port.write(struct.pack("<4sII", b"MWUP", len(image), crc32(image)))
+    if on_status is not None:
+        on_status("Bootloader 已连接，正在准备 Flash。")
+    port.write(struct.pack("<4sII", b"MWUP", total, crc32(image)))
     if port.read(1) != ACK:
         raise RuntimeError("Bootloader 未接受镜像头。请检查板卡和 APP.bin，复位后重新上传。")
 
-    for offset in range(0, len(image), CHUNK_SIZE):
+    if on_status is not None:
+        on_status("正在写入固件。")
+    for offset in range(0, total, CHUNK_SIZE):
         chunk = image[offset:offset + CHUNK_SIZE]
         body = struct.pack("<IH", offset, len(chunk)) + chunk
         frame = body + struct.pack("<I", crc32(body))
@@ -76,17 +88,21 @@ def upload(port, image, ready_timeout):
             raise RuntimeError(f"偏移 {offset} 的数据帧连续被拒绝。请复位后重新上传。")
 
         sent = offset + len(chunk)
-        if sent % 4096 == 0 or sent == len(image):
-            print(f"已写入 {sent}/{len(image)} 字节", flush=True)
+        if on_progress is not None:
+            on_progress(sent, total)
+        elif sent % 4096 == 0 or sent == total:
+            report(f"已写入 {sent}/{total} 字节")
 
     # 最后一帧 ACK 仅确认当帧写入，DONE 的 ACK 才确认整镜像有效。
+    if on_status is not None:
+        on_status("正在校验完整固件。")
     port.write(b"DONE")
     reply = port.read(1)
     if reply == NAK:
         raise RuntimeError("整镜像校验失败。请按住 KEY2 复位并重新上传。")
     if reply != ACK:
         raise RuntimeError("未收到升级完成回执。请松开 KEY2 后复位检查版本，必要时重新上传。")
-    print("升级校验通过。松开 KEY2 后复位以启动 APP。")
+    report("升级校验通过。松开 KEY2 后复位以启动 APP。")
 
 
 def main():

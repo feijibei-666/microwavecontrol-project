@@ -166,6 +166,18 @@ UI 使用静态 128×8 RGB565 条带缓冲（2048 字节），LCD 使用 256 字
 
 串口升级使用独立构建。按 [Bootloader 构建与接线](bootloader/main.md) 生成首装用的 `bootloader.hex` 和串口升级用的 `app.bin`。现有 Keil/EIDE 目标可继续通过 ST-Link 独立下载。
 
+使用 `--version V1.3 --heating-app` 生成 `heating-app.bin`。加热 APP 在 STM32 上运行，可通过现有 Bootloader 串口上传。能控制的功能包括按键倒计时、三档继电器调功、PB10 开门暂停、DHT11 过温关断和手动停止。
+
+### 在 Keil 中构建并下载加热版
+
+1. 重新打开 `project.uvprojx`，在目标下拉框选择 **V1.3 Heating**，然后点击 **Build**。
+2. 构建完成后，`build/keil-heating/factory.hex` 包含 Bootloader、加热 APP 和启动校验记录。
+3. 保持 PTC 断电并接好 ST-Link，点击 **Flash → Download**。Keil 调用 STM32CubeProgrammer 写入同一份完整镜像、校验后复位。LCD 开机画面应显示 `FW V1.3`。
+
+构建需要 ARMCC5、Windows PowerShell 和 Python 3。下载使用 PATH 上、ST 默认安装目录中或 EIDE 已安装的 `STM32_Programmer_CLI.exe`。`Target 1` 是从 `0x08000000` 写入的演示目标，下载它会覆盖 Bootloader 所在区域。
+
+Windows 图形上位机可选择 COM 口和 BIN，显示写入进度及整包校验结果。见 [上位机使用与打包说明](tools/firmware_updater.md)。
+
 ### Keil MDK
 
 1. 安装 Keil MDK、ARM Compiler 5 和 STM32F1 器件支持包。工程记录的版本见上表；更换工具链后需重新验证兼容性。

@@ -39,7 +39,7 @@ uint8_t Outputs_Apply(uint8_t door_closed, uint8_t running, uint8_t relay_reques
     door_closed = (uint8_t)(door_closed != 0);
     running = (uint8_t)(running != 0 && door_closed);
 
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     /* 运行许可约束继电器请求。先更新 PA2，再处理门舵机和转盘。 */
     relay_command = (uint8_t)(running && relay_requested);
 #else
@@ -47,8 +47,8 @@ uint8_t Outputs_Apply(uint8_t door_closed, uint8_t running, uint8_t relay_reques
     (void)relay_requested;
 #endif
 
-#if RELAY_LED_COUNTDOWN_TEST
-    if (relay_command) { Heater_TestEnergize(); }
+#if RELAY_COUNTDOWN_ENABLED
+    if (relay_command) { Heater_Energize(); }
     else
 #endif
     {

@@ -21,7 +21,7 @@ static MicrowaveApp app;
 static void App_SetDoor(uint8_t closed)
 {
     app.view.door_closed = closed;
-#if !RELAY_LED_COUNTDOWN_TEST
+#if !RELAY_COUNTDOWN_ENABLED
     if (closed) { LED_OFF(); }
     else { LED_ON(); }
 #endif
@@ -65,7 +65,7 @@ void App_SetTemperature(Dht11Reading reading)
     }
 }
 
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
 void App_SetDoorFeedback(uint8_t closed)
 {
     app.view.door_feedback_closed = closed;
@@ -84,7 +84,7 @@ void App_Init(uint32_t now)
     app.view.state = APP_STANDBY;
     app.view.page = PAGE_WELCOME;
     App_SetDoor(0);
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     App_SetDoorFeedback(0);
 #endif
     app.view.power_level = 1;
@@ -170,7 +170,7 @@ static void App_Key1(uint8_t event, uint32_t now)
         if (app.view.state == APP_STOPPED) { return; }
         fault = App_TemperatureFault();
         if (!app.view.door_closed
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
             || !app.view.door_feedback_closed
 #endif
            )
@@ -200,11 +200,11 @@ static void App_Key1(uint8_t event, uint32_t now)
 static void App_Key2(uint8_t event, uint32_t now)
 {
     if (event == KEY_NONE || app.view.state == APP_STOPPED) { return; }
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     if (event == KEY_LONG && app.view.state == APP_HEATING)
     {
-        /* 保留低压联调的手动停机入口，便于不升温时调试输出链。 */
-        App_Stop(STOP_TEST);
+        /* 手动停止与异常状态使用同一关断出口，废弃本轮倒计时。 */
+        App_Stop(STOP_MANUAL);
         return;
     }
 #endif

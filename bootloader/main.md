@@ -31,6 +31,13 @@ python tools/upload_app.py COM5 build/upgrade/v1/app.bin
 
 若未自动找到 ARMCC5，给构建命令加 `--toolchain` 并指定 ARMCC 安装目录。首次用 ST-Link 烧录 `bootloader.hex`，用串口上传 `app.bin`。示例里的 COM5 换成实际串口。偏移版 `app.hex` 用于调试，常规 SWD 恢复使用原工程从 Flash 起点构建的 HEX。
 
+单独生成加热控制 APP 的命令如下。串口上传仍使用已有 Bootloader，文件为 `heating-app.bin`。
+
+```powershell
+python tools/build_upgrade.py --version V1.3 --heating-app --out-dir build/upgrade/v1.3-heating
+python tools/upload_app.py COM5 build/upgrade/v1.3-heating/heating-app.bin
+```
+
 上板验收时拔掉 PTC 电源。先上传 V1.0，复位确认欢迎或待机页显示对应版本。再用不同版本的 BIN 验证更新，另做一次中途断开再重传的测试。默认升级 APP 保持 PA2 关闭，需要低压联调构建时可显式传入 `--relay-led-test`。
 
 ## 实机验收

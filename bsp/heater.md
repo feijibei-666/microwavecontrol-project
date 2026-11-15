@@ -1,11 +1,11 @@
 # heater.c 继电器安全关闭驱动
 
-常规构建始终关闭继电器。三个测试宏互斥。`RELAY_NO_LOAD_TEST=1` 用于 1 秒空载诊断，`RELAY_LED_COUNTDOWN_TEST=1` 驱动低压 LED 回路验证倒计时状态，`PTC_BENCH_TEST=1` 用于独立 5 V 台架试热。
+常规构建始终关闭继电器。输出模式宏互斥。`RELAY_NO_LOAD_TEST=1` 用于 1 秒空载诊断，`RELAY_LED_COUNTDOWN_TEST=1` 用于低压倒计时联调，`PTC_BENCH_TEST=1` 用于 10 秒台架试热，`PTC_HEATING_APP=1` 用于加热 APP。
 
 - PA2 配置为 2 MHz 普通推挽输出，低电平关闭，面向高电平有效继电器模块。
 - `Heater_Off()` 先打开 GPIOA 时钟并读取回确认，再预装低电平、切换输出模式。可在驱动初始化前或故障中断中调用，不依赖任务、队列、延时或堆分配。
 - `Heater_Init()` 仅调用安全关闭，不再初始化 TIM2/TIM2_CH3，不生成 50 Hz PWM。
 - `Heater_SetPower()` 保留旧接口兼容；包括无效参数在内，所有调用均强制关闭。
-- `Heater_TestEnergize()` 仅在测试构建编译。控制任务在 GPIO 初始化后置位 PA2。单次诊断到期、LED 联调离开运行状态或出现已接入的故障时调用 `Heater_Off()`。
+- `Heater_Energize()` 仅在启用输出模式时编译。控制任务在 GPIO 初始化后置位 PA2。单次诊断到期、倒计时关断或出现已接入的故障时调用 `Heater_Off()`。
 - 复位到执行初始化之间 GPIO 处于硬件复位状态，软件不能保证外部模块输入电平；模块输入应有适当硬件下拉，且必须确认兼容 3.3V 控制信号。
 - 实机第一阶段断开 PTC，仅允许继电器空载验证。后续机械继电器调功采用慢速时间窗控制，不能恢复原有 50 Hz PWM。

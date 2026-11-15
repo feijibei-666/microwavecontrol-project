@@ -12,7 +12,7 @@
 #include "buzzer.h"
 #if RELAY_PULSE_TEST
 #include "heater.h"
-#elif RELAY_LED_COUNTDOWN_TEST
+#elif RELAY_COUNTDOWN_ENABLED
 #include "door_switch.h"
 #endif
 
@@ -29,7 +29,7 @@ typedef struct
 {
     uint8_t key1;
     uint8_t key2;
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     uint8_t door_feedback_closed;
 #endif
 } InputEvent;
@@ -65,7 +65,7 @@ static void InputTask(void *argument)
 {
     TickType_t wake = xTaskGetTickCount();
     InputEvent event;
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     uint8_t door_changed;
     uint8_t previous_door_closed = 0;
     uint8_t key1_held_at_close = 0;
@@ -73,7 +73,7 @@ static void InputTask(void *argument)
     (void)argument;
     for (;;)
     {
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
         event.door_feedback_closed = DoorSwitch_Sample(delay_millis());
         door_changed = (uint8_t)(event.door_feedback_closed != previous_door_closed);
         previous_door_closed = event.door_feedback_closed;
@@ -88,12 +88,12 @@ static void InputTask(void *argument)
         {
             event.key1 = KEY1_Scan();
             event.key2 = KEY2_Scan();
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
             /* 关门前就按住 KEY1 时，本次长按不能启动或恢复。 */
             if (key1_held_at_close && event.key1 == KEY_LONG) { event.key1 = KEY_NONE; }
 #endif
         }
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
         if (KEY1_READ() != KEY_ACTIVE_LEVEL) { key1_held_at_close = 0; }
         /* 门事件不依赖 LCD 就绪，与同拍按键一起送 Control 优先处理。 */
         if (door_changed || event.key1 != KEY_NONE || event.key2 != KEY_NONE)
@@ -156,7 +156,7 @@ static void ControlTask(void *argument)
                 )
         {
             /* 消抖器每次长按只发一个事件；松开再按才会触发下一次。 */
-            Heater_TestEnergize();
+            Heater_Energize();
             energized_at = xTaskGetTickCount();
             snapshot.relay_active = 1;
         }
@@ -180,7 +180,7 @@ static void Control_ApplyEffects(AppSnapshot *previous, AppSnapshot *current,
     uint8_t relay_requested = 0;
 
     /* 输出先于提示音和绘屏执行；开门路径由 BSP 保证先停转、断加热。 */
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     static const uint16_t on_ms[] = {10000U, 14000U, 20000U};
     uint32_t elapsed_ms = current->total_ms - current->remaining_ms;
 
@@ -237,7 +237,7 @@ static void ControlTask(void *argument)
             effective_reading.status = DHT11_TIMEOUT;
         }
         App_SetTemperature(effective_reading);
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
         if (received == pdPASS)
         {
             /* 先处理开门，再走计时和输出。按键无法抢在同拍门反馈之前启动。 */
@@ -341,7 +341,7 @@ void AppRTOS_Start(void)
 #if RELAY_PULSE_TEST
     snapshot.page = PAGE_RELAY_TEST;
 #else
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     DoorSwitch_Init();
 #endif
     App_Init(0);

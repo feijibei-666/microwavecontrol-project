@@ -248,12 +248,14 @@ static void Footer(void)
             a = "K1  OPEN TO PAUSE";
 #if RELAY_LED_COUNTDOWN_TEST
             b = "HOLD K2  TEST STOP";
+#elif PTC_HEATING_APP
+            b = "HOLD K2  STOP";
 #else
             b = "CYCLE IN PROGRESS";
 #endif
             break;
         case PAGE_PAUSED:
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
             if (view.door_closed && !view.door_feedback_closed)
             {
                 a = "CLOSE DOOR FIRST"; b = "THEN HOLD K1";
@@ -297,12 +299,15 @@ static void Header(void)
     /* 显示输出层执行的命令，通过控制任务快照传递。 */
     if (view.page == PAGE_RUNNING) { title = "RUNNING"; }
     crumb = view.relay_active ? "LED TEST / PA2 ON" : "LED TEST / PA2 OFF";
+#elif PTC_HEATING_APP
+    /* ON/OFF 反映 PA2 命令。调功窗口内暂停供电时，倒计时继续运行。 */
+    crumb = view.relay_active ? "HEAT OUTPUT ON" : "HEAT OUTPUT OFF";
 #endif
     Rect(0, 0, UI_WIDTH, 2, accent);
     Text(8, 10, title, C_TEXT, 1);
     RoundRect(99, 7, 22, 14, 5, C_CARD);
     Text(104, 11, step, accent, 1);
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     /* 与 PA2 命令分行，所有页面都能查看实际触点。 */
     Text(8, 20, crumb, C_MUTED, 1);
     Text(8, 29, view.door_feedback_closed ? "PB10 CLOSED" : "PB10 OPEN", C_MUTED, 1);
@@ -356,7 +361,7 @@ static void Scene(void)
     }
 #endif
 
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     shown_door_closed = view.door_feedback_closed;
 #endif
     Header();
@@ -434,7 +439,11 @@ static void Scene(void)
             Center(59, "HEATING STOPPED", C_AMBER, 1);
             if (view.stop_reason == STOP_OVER_TEMP) { Center(83, "OVER TEMP", C_AMBER, 1); }
             else if (view.stop_reason == STOP_TEMP_NO_DATA) { Center(83, "TEMP NO DATA", C_AMBER, 1); }
+#if RELAY_LED_COUNTDOWN_TEST
             else { Center(83, "TEST STOP", C_MUTED, 1); }
+#else
+            else { Center(83, "MANUAL STOP", C_MUTED, 1); }
+#endif
             break;
         default: break;
     }
@@ -513,7 +522,7 @@ void UI_SetSnapshot(const AppSnapshot *snapshot, uint32_t now)
             DirtyRegion(88, 106);
             DirtyRegion(117, 154);
         }
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
         if (view.relay_active != snapshot->relay_active) DirtyRegion(20, 26);
         if (view.door_feedback_closed != snapshot->door_feedback_closed)
         {

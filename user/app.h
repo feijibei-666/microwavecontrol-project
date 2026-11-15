@@ -50,7 +50,7 @@ typedef enum
     STOP_NONE,
     STOP_OVER_TEMP,
     STOP_TEMP_NO_DATA,
-    STOP_TEST
+    STOP_MANUAL
 } AppStopReason;
 
 typedef struct
@@ -58,7 +58,7 @@ typedef struct
     uint8_t state;
     uint8_t page;
     uint8_t door_closed;          /* KEY1 门舵机命令 */
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
     uint8_t door_feedback_closed; /* PB10 消抖后的实际反馈 */
 #endif
     uint8_t power_level;
@@ -69,7 +69,7 @@ typedef struct
     uint8_t notice;
     uint8_t stop_reason;
     Dht11Reading environment;
-#if RELAY_PULSE_TEST || RELAY_LED_COUNTDOWN_TEST
+#if RELAY_PULSE_TEST || RELAY_COUNTDOWN_ENABLED
     uint8_t relay_active;
 #endif
 #if PTC_BENCH_TEST
@@ -80,7 +80,7 @@ typedef struct
 void App_Init(uint32_t now);
 void App_Update(uint32_t now);
 void App_SetTemperature(Dht11Reading reading);
-#if RELAY_LED_COUNTDOWN_TEST
+#if RELAY_COUNTDOWN_ENABLED
 void App_SetDoorFeedback(uint8_t closed);
 #endif
 void App_HandleKeys(uint8_t key1, uint8_t key2, uint32_t now);

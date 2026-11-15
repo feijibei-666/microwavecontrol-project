@@ -12,9 +12,9 @@ void Heater_SetPower(uint8_t level);    /* 0=Low 1=Medium 2=High */
 /* 初始化前及中断/故障上下文均可调用，不使用RTOS、延时或堆分配。 */
 void Heater_Off(void);
 
-#if RELAY_PULSE_TEST || RELAY_LED_COUNTDOWN_TEST
-/* 仅继电器测试构建提供，由控制任务在 GPIO 初始化后调用。 */
-void Heater_TestEnergize(void);
+#if RELAY_PULSE_TEST || RELAY_COUNTDOWN_ENABLED
+/* 由获准控制输出的构建提供，在 GPIO 初始化后调用。 */
+void Heater_Energize(void);
 #endif
 
 #endif
